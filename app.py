@@ -76,7 +76,7 @@ CONSONANTS = {
 
 # --- 3. User Interface ---
 st.title("English Phoneme Highlighter")
-text_input = st.text_area("Enter your sentence here:", "The knight will speak to the rough judge.")
+text_input = st.text_area("Enter your text here:", "The knight will speak to the rough judge.")
 
 category = st.radio("Sound Category:", ["Vowels", "Consonants"], horizontal=True)
 display_options = list(VOWELS.values()) if category == "Vowels" else list(CONSONANTS.values())
@@ -135,4 +135,5 @@ if st.button("Highlight Phonemes"):
 
     final_html = re.sub(r' ([.,!?\'])', r'\1', " ".join(highlighted_output))
     st.markdown("### Result:")
+
     st.markdown(f"<div style='font-size: 24px; line-height: 1.5;'>{final_html}</div>", unsafe_allow_html=True)
