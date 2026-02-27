@@ -86,16 +86,34 @@ target_phoneme = selected_display_text.split(" -")[0]
 # --- 4. Text Processing Engine ---
 if st.button("Highlight Phonemes"):
     words = nltk.word_tokenize(text_input)
+    # NEW: Run the grammar cop over the tokenized words
+    tagged_words = nltk.pos_tag(words)
     highlighted_output = []
 
-    for word in words:
+    # NEW: Loop through both the word AND its grammar tag
+    for word, pos_tag in tagged_words:
         if not word.isalnum():
             highlighted_output.append(word)
             continue
             
         lower_word = word.lower()
         if lower_word in aligned_dict:
-            alignment = aligned_dict[lower_word]
+            # We use list() to create a copy so we don't mutate the master dictionary
+            alignment = list(aligned_dict[lower_word])
+            
+            # --- NEW: The Heteronym Grammar Override ---
+            if lower_word == "read" and pos_tag in ["VBD", "VBN"]:
+                alignment = [['r', 'R'], ['e', 'EH'], ['a', ''], ['d', 'D']]
+            elif lower_word == "record" and pos_tag.startswith("VB"):
+                alignment = [['r', 'R'], ['e', 'IH'], ['c', 'K'], ['o', 'AO'], ['r', 'R'], ['d', 'D']]
+            elif lower_word == "object" and pos_tag.startswith("VB"):
+                alignment = [['o', 'AH'], ['b', 'B'], ['j', 'JH'], ['e', 'EH'], ['c', 'K'], ['t', 'T']]
+            elif lower_word == "tear" and pos_tag.startswith("VB"):
+                alignment = [['t', 'T'], ['e', 'EH'], ['a', ''], ['r', 'R']]
+            elif lower_word == "live" and pos_tag.startswith("VB"):
+                alignment = [['l', 'L'], ['i', 'IH'], ['v', 'V'], ['e', '']]
+            # ---------------------------------------------
+            
             highlights = [False] * len(alignment)
             
             # 1. Base Matches
@@ -137,4 +155,3 @@ if st.button("Highlight Phonemes"):
     st.markdown("### Result:")
 
     st.markdown(f"<div style='font-size: 24px; line-height: 1.5;'>{final_html}</div>", unsafe_allow_html=True)
-
