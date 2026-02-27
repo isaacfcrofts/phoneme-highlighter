@@ -15,6 +15,7 @@ def setup_nltk():
     nltk.download('punkt')
     nltk.download('punkt_tab')
     nltk.download('averaged_perceptron_tagger')
+    nltk.download('averaged_perceptron_tagger_eng')  # <-- The new missing piece!
 
 @st.cache_data
 def load_and_build_dictionary():
@@ -155,3 +156,4 @@ if st.button("Highlight Phonemes"):
     st.markdown("### Result:")
 
     st.markdown(f"<div style='font-size: 24px; line-height: 1.5;'>{final_html}</div>", unsafe_allow_html=True)
+
