@@ -37,6 +37,7 @@ def load_and_build_dictionary():
             graphemes = list(word) 
             phonemes = tokens[1:]
             
+            # Standard 1-to-1 match
             if len(graphemes) == len(phonemes):
                 word_alignment = []
                 for g, p in zip(graphemes, phonemes):
@@ -46,6 +47,27 @@ def load_and_build_dictionary():
                         word_alignment.append([g_clean, p_clean])
                 if word not in temp_dict:
                     temp_dict[word] = word_alignment
+                    
+            # --- NEW: The "X" Rescue Mission ---
+            elif 'x' in word and len(graphemes) == len(phonemes) - 1:
+                word_alignment = []
+                p_idx = 0
+                try:
+                    for g in graphemes:
+                        if g == 'x':
+                            # Shove BOTH sounds into the 'x' slot (e.g., "K S")
+                            combined_p = phonemes[p_idx] + " " + phonemes[p_idx+1]
+                            word_alignment.append([g, combined_p])
+                            p_idx += 2
+                        else:
+                            word_alignment.append([g, phonemes[p_idx]])
+                            p_idx += 1
+                    if word not in temp_dict:
+                        temp_dict[word] = word_alignment
+                except IndexError:
+                    pass # Skip if the alignment is too weird
+            # -----------------------------------
+            
         return temp_dict
     except Exception as e:
         st.error(f"Cloud build failed: {e}")
@@ -102,7 +124,7 @@ if st.button("Highlight Phonemes"):
             # We use list() to create a copy so we don't mutate the master dictionary
             alignment = list(aligned_dict[lower_word])
             
-            # --- NEW: Comprehensive Heteronym Grammar Override ---
+            # --- Comprehensive Heteronym Grammar Override ---
             if lower_word == "read":
                 if pos_tag in ["VBD", "VBN"]:
                     alignment = [['r', 'R'], ['e', 'EH'], ['a', ''], ['d', 'D']]
@@ -159,16 +181,17 @@ if st.button("Highlight Phonemes"):
             
             # 1. Base Matches
             for i, (g, p) in enumerate(alignment):
-                if re.sub(r'\d+', '', p) == target_phoneme:
+                # NEW: We use .split() so that if 'x' holds two sounds ("K S"), it checks both!
+                if target_phoneme in re.sub(r'\d+', '', p).split():
                     highlights[i] = True
                     
-            # --- NEW: The 'X' Spillover Fix ---
+            # --- The 'X' Spillover Fix ---
             for i in range(len(alignment)):
                 if alignment[i][0] == 'x':
                     # If we are searching for an 'x' sound (K, S, G, or Z)
                     if target_phoneme in ['K', 'S', 'G', 'Z']:
                         # Check if the next letter accidentally caught the spillover sound
-                        if i + 1 < len(alignment) and re.sub(r'\d+', '', alignment[i+1][1]) == target_phoneme:
+                        if i + 1 < len(alignment) and target_phoneme in re.sub(r'\d+', '', alignment[i+1][1]).split():
                             highlights[i] = True     # Highlight the 'x'
                             highlights[i+1] = False  # Remove highlight from the innocent next letter
             # ----------------------------------
