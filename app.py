@@ -222,3 +222,9 @@ if st.button("Highlight Phonemes"):
     st.markdown("### Result:")
 
     st.markdown(f"<div style='font-size: 24px; line-height: 1.5;'>{final_html}</div>", unsafe_allow_html=True)
+
+st.write("### Diagnostic Data")
+st.write("next:", aligned_dict.get("next", "NOT IN DICTIONARY"))
+st.write("exactly:", aligned_dict.get("exactly", "NOT IN DICTIONARY"))
+st.write("expected:", aligned_dict.get("expected", "NOT IN DICTIONARY"))
+st.write("boxer:", aligned_dict.get("boxer", "NOT IN DICTIONARY"))
