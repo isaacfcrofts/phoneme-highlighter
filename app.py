@@ -15,7 +15,7 @@ def setup_nltk():
     nltk.download('punkt')
     nltk.download('punkt_tab')
     nltk.download('averaged_perceptron_tagger')
-    nltk.download('averaged_perceptron_tagger_eng')  # <-- The new missing piece!
+    nltk.download('averaged_perceptron_tagger_eng')  # <-- The crucial fix for the LookupError!
 
 @st.cache_data
 def load_and_build_dictionary():
@@ -87,11 +87,11 @@ target_phoneme = selected_display_text.split(" -")[0]
 # --- 4. Text Processing Engine ---
 if st.button("Highlight Phonemes"):
     words = nltk.word_tokenize(text_input)
-    # NEW: Run the grammar cop over the tokenized words
+    # Run the grammar cop over the tokenized words
     tagged_words = nltk.pos_tag(words)
     highlighted_output = []
 
-    # NEW: Loop through both the word AND its grammar tag
+    # Loop through both the word AND its grammar tag
     for word, pos_tag in tagged_words:
         if not word.isalnum():
             highlighted_output.append(word)
@@ -102,17 +102,57 @@ if st.button("Highlight Phonemes"):
             # We use list() to create a copy so we don't mutate the master dictionary
             alignment = list(aligned_dict[lower_word])
             
-            # --- NEW: The Heteronym Grammar Override ---
-            if lower_word == "read" and pos_tag in ["VBD", "VBN"]:
-                alignment = [['r', 'R'], ['e', 'EH'], ['a', ''], ['d', 'D']]
-            elif lower_word == "record" and pos_tag.startswith("VB"):
-                alignment = [['r', 'R'], ['e', 'IH'], ['c', 'K'], ['o', 'AO'], ['r', 'R'], ['d', 'D']]
-            elif lower_word == "object" and pos_tag.startswith("VB"):
-                alignment = [['o', 'AH'], ['b', 'B'], ['j', 'JH'], ['e', 'EH'], ['c', 'K'], ['t', 'T']]
-            elif lower_word == "tear" and pos_tag.startswith("VB"):
-                alignment = [['t', 'T'], ['e', 'EH'], ['a', ''], ['r', 'R']]
-            elif lower_word == "live" and pos_tag.startswith("VB"):
-                alignment = [['l', 'L'], ['i', 'IH'], ['v', 'V'], ['e', '']]
+            # --- NEW: Comprehensive Heteronym Grammar Override ---
+            if lower_word == "read":
+                if pos_tag in ["VBD", "VBN"]:
+                    alignment = [['r', 'R'], ['e', 'EH'], ['a', ''], ['d', 'D']]
+                else:
+                    alignment = [['r', 'R'], ['e', 'IY'], ['a', ''], ['d', 'D']]
+            elif lower_word == "record":
+                if pos_tag.startswith("VB"):
+                    alignment = [['r', 'R'], ['e', 'IH'], ['c', 'K'], ['o', 'AO'], ['r', 'R'], ['d', 'D']]
+                else:
+                    alignment = [['r', 'R'], ['e', 'EH'], ['c', 'K'], ['o', 'ER'], ['r', 'R'], ['d', 'D']]
+            elif lower_word == "object":
+                if pos_tag.startswith("VB"):
+                    alignment = [['o', 'AH'], ['b', 'B'], ['j', 'JH'], ['e', 'EH'], ['c', 'K'], ['t', 'T']]
+                else:
+                    alignment = [['o', 'AA'], ['b', 'B'], ['j', 'JH'], ['e', 'EH'], ['c', 'K'], ['t', 'T']]
+            elif lower_word == "tear":
+                if pos_tag.startswith("VB"):
+                    alignment = [['t', 'T'], ['e', 'EH'], ['a', ''], ['r', 'R']]
+                else:
+                    alignment = [['t', 'T'], ['e', 'IY'], ['a', ''], ['r', 'R']]
+            elif lower_word == "live":
+                if pos_tag.startswith("VB"):
+                    alignment = [['l', 'L'], ['i', 'IH'], ['v', 'V'], ['e', '']]
+                else:
+                    alignment = [['l', 'L'], ['i', 'AY'], ['v', 'V'], ['e', '']]
+            elif lower_word == "lead":
+                if pos_tag.startswith("NN"):
+                    alignment = [['l', 'L'], ['e', 'EH'], ['a', ''], ['d', 'D']]
+                else:
+                    alignment = [['l', 'L'], ['e', 'IY'], ['a', ''], ['d', 'D']]
+            elif lower_word == "present":
+                if pos_tag.startswith("VB"):
+                    alignment = [['p', 'P'], ['r', 'R'], ['e', 'IY'], ['s', 'Z'], ['e', 'EH'], ['n', 'N'], ['t', 'T']]
+                else:
+                    alignment = [['p', 'P'], ['r', 'R'], ['e', 'EH'], ['s', 'Z'], ['e', 'AH'], ['n', 'N'], ['t', 'T']]
+            elif lower_word == "project":
+                if pos_tag.startswith("VB"):
+                    alignment = [['p', 'P'], ['r', 'R'], ['o', 'AH'], ['j', 'JH'], ['e', 'EH'], ['c', 'K'], ['t', 'T']]
+                else:
+                    alignment = [['p', 'P'], ['r', 'R'], ['o', 'AA'], ['j', 'JH'], ['e', 'EH'], ['c', 'K'], ['t', 'T']]
+            elif lower_word == "wind":
+                if pos_tag.startswith("VB"):
+                    alignment = [['w', 'W'], ['i', 'AY'], ['n', 'N'], ['d', 'D']]
+                else:
+                    alignment = [['w', 'W'], ['i', 'IH'], ['n', 'N'], ['d', 'D']]
+            elif lower_word == "minute":
+                if pos_tag.startswith("JJ"): # Adjective (tiny)
+                    alignment = [['m', 'M'], ['i', 'AY'], ['n', 'N'], ['u', 'UW'], ['t', 'T'], ['e', '']]
+                else: # Noun (time)
+                    alignment = [['m', 'M'], ['i', 'IH'], ['n', 'N'], ['u', 'AH'], ['t', 'T'], ['e', '']]
             # ---------------------------------------------
             
             highlights = [False] * len(alignment)
@@ -121,6 +161,17 @@ if st.button("Highlight Phonemes"):
             for i, (g, p) in enumerate(alignment):
                 if re.sub(r'\d+', '', p) == target_phoneme:
                     highlights[i] = True
+                    
+            # --- NEW: The 'X' Spillover Fix ---
+            for i in range(len(alignment)):
+                if alignment[i][0] == 'x':
+                    # If we are searching for an 'x' sound (K, S, G, or Z)
+                    if target_phoneme in ['K', 'S', 'G', 'Z']:
+                        # Check if the next letter accidentally caught the spillover sound
+                        if i + 1 < len(alignment) and re.sub(r'\d+', '', alignment[i+1][1]) == target_phoneme:
+                            highlights[i] = True     # Highlight the 'x'
+                            highlights[i+1] = False  # Remove highlight from the innocent next letter
+            # ----------------------------------
             
             # 2. Your Ultimate Multi-Letter Catcher Logic
             tetraph_rules = {"tion": ["SH","AH","N"], "sion": ["SH","ZH","AH","N"], "eigh": ["EY"], "augh": ["AO","F"], "ough": ["OW","AW","UW","AO","F","AH"]}
@@ -156,4 +207,3 @@ if st.button("Highlight Phonemes"):
     st.markdown("### Result:")
 
     st.markdown(f"<div style='font-size: 24px; line-height: 1.5;'>{final_html}</div>", unsafe_allow_html=True)
-
