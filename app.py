@@ -34,14 +34,10 @@ def load_and_build_dictionary():
             raw_word = tokens[0].lower()
             if not raw_word[0].isalpha(): continue
             word = raw_word.split('(')[0]
-            
-            # Ensure the dictionary key is completely clean of any padded underscores
-            clean_word = word.replace('_', '')
-            
             graphemes = list(word) 
             phonemes = tokens[1:]
             
-            # The .align file already matches lengths by combining phonemes (e.g., K_S)
+            # Standard 1-to-1 match
             if len(graphemes) == len(phonemes):
                 word_alignment = []
                 for g, p in zip(graphemes, phonemes):
@@ -49,8 +45,29 @@ def load_and_build_dictionary():
                     p_clean = p if p != '_' else ''
                     if g_clean or p_clean:
                         word_alignment.append([g_clean, p_clean])
-                if clean_word not in temp_dict:
-                    temp_dict[clean_word] = word_alignment
+                if word not in temp_dict:
+                    temp_dict[word] = word_alignment
+                    
+            # --- THE RESTORED "X" RESCUE MISSION ---
+            elif 'x' in word and len(graphemes) == len(phonemes) - 1:
+                word_alignment = []
+                p_idx = 0
+                try:
+                    for g in graphemes:
+                        if g == 'x':
+                            # Shove BOTH sounds into the 'x' slot separated by space (e.g., "K S" or "G Z")
+                            combined_p = phonemes[p_idx] + " " + phonemes[p_idx+1]
+                            word_alignment.append([g, combined_p])
+                            p_idx += 2
+                        else:
+                            word_alignment.append([g, phonemes[p_idx]])
+                            p_idx += 1
+                    if word not in temp_dict:
+                        temp_dict[word] = word_alignment
+                except IndexError:
+                    pass
+            # ---------------------------------------
+            
         return temp_dict
     except Exception as e:
         st.error(f"Cloud build failed: {e}")
@@ -161,16 +178,15 @@ if st.button("Highlight Phonemes"):
             
             # 1. Base Matches
             for i, (g, p) in enumerate(alignment):
-                # NEW: Replace '_' with space so combined sounds (like 'K_S') split correctly into ['K', 'S']
-                if target_phoneme in re.sub(r'\d+', '', p).replace('_', ' ').split():
+                # We use .split() so if 'x' holds two sounds ("K S" or "G Z"), it checks both!
+                if target_phoneme in re.sub(r'\d+', '', p).split():
                     highlights[i] = True
                     
             # --- The 'X' Spillover Fix ---
             for i in range(len(alignment)):
                 if alignment[i][0] == 'x':
                     if target_phoneme in ['K', 'S', 'G', 'Z']:
-                        # Check the next letter to pull back spillover sounds
-                        if i + 1 < len(alignment) and target_phoneme in re.sub(r'\d+', '', alignment[i+1][1]).replace('_', ' ').split():
+                        if i + 1 < len(alignment) and target_phoneme in re.sub(r'\d+', '', alignment[i+1][1]).split():
                             highlights[i] = True     
                             highlights[i+1] = False  
             # ----------------------------------
@@ -180,19 +196,16 @@ if st.button("Highlight Phonemes"):
             trigraph_rules = {"igh": ["AY"], "tch": ["CH"], "dge": ["JH"], "eau": ["OW","UW"], "ous": ["AH","S"], "que": ["K"]}
             pair_rules = {"sh":["SH"],"ch":["CH","K","SH"],"th":["TH","DH"],"ph":["F"],"wh":["W","HH"],"ng":["NG"],"gh":["F","G"],"ck":["K"],"kn":["N"],"wr":["R"],"mb":["M"],"gn":["N"],"rh":["R"],"ti":["SH"],"ci":["SH"],"si":["SH","ZH"],"ce":["SH"],"tu":["CH"],"su":["SH","ZH"],"ea":["IY","EH","EY"],"ee":["IY"],"oa":["OW"],"oo":["UW","UH"],"ou":["AW","AH","UW","OW"],"ow":["AW","OW"],"ai":["EY","EH"],"ay":["EY"],"ei":["EY","IY"],"ey":["EY","IY"],"au":["AO"],"aw":["AO"],"ew":["UW","Y"],"oe":["OW","UW"],"ie":["IY","AY"],"ui":["UW","IH"],"ue":["UW"]}
 
-            # 4-letter combos
             for i in range(len(alignment) - 3):
                 quad = "".join([a[0] for a in alignment[i:i+4]])
                 if quad in tetraph_rules and target_phoneme in tetraph_rules[quad]:
                     if any(highlights[i:i+4]): highlights[i:i+4] = [True, True, True, True]
 
-            # 3-letter combos
             for i in range(len(alignment) - 2):
                 triple = "".join([a[0] for a in alignment[i:i+3]])
                 if triple in trigraph_rules and target_phoneme in trigraph_rules[triple]:
                     if any(highlights[i:i+3]): highlights[i:i+3] = [True, True, True]
 
-            # 2-letter combos & Doubles
             for i in range(len(alignment) - 1):
                 pair = "".join([a[0] for a in alignment[i:i+2]])
                 is_double = (alignment[i][0] == alignment[i+1][0] and alignment[i][0].isalpha())
