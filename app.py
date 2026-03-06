@@ -9,41 +9,16 @@ import nltk
 import re
 import urllib.request
 
-def smart_align(graphemes, phonemes):
-    """
-    Safely aligns letters to phonemes, allowing 'X' to take two sounds.
-    """
-    aligned_data = []
-    p_idx = 0  # Phoneme index tracker
-    
-    for char in graphemes:
-        # When we hit 'x', and we have at least 2 phonemes left to grab
-        if char == 'x' and p_idx + 1 < len(phonemes):
-            # Bundle the two sounds together (e.g., "K S" or "G Z")
-            combined_phonemes = f"{phonemes[p_idx]} {phonemes[p_idx+1]}"
-            aligned_data.append([char, combined_phonemes])
-            p_idx += 2  # Skip ahead by 2 because 'X' took both!
-        else:
-            # Standard 1-to-1 mapping for normal letters
-            if p_idx < len(phonemes):
-                aligned_data.append([char, phonemes[p_idx]])
-                p_idx += 1
-            else:
-                # If we run out of sounds, treat the remaining letters as silent
-                aligned_data.append([char, ""]) 
-                
-    return aligned_data
-
 # --- 1. Setup & Cloud Dictionary Builder ---
 @st.cache_resource
-def setup_nltk_v3(): # Renamed to bust cache
+def setup_nltk_v2(): # Renamed to bust cache
     nltk.download('punkt')
     nltk.download('punkt_tab')
     nltk.download('averaged_perceptron_tagger')
     nltk.download('averaged_perceptron_tagger_eng')
 
 @st.cache_data
-def build_cloud_dictionary_v4(): # Renamed to FORCE Streamlit to build a new dictionary
+def build_cloud_dictionary_v3(): # Renamed to FORCE Streamlit to build a new dictionary
     """Downloads the CMU data and builds your 121k dictionary in the cloud memory"""
     url = "https://raw.githubusercontent.com/kastnerkyle/diphone_synthesizer/master/cmudict.0.7a_SPHINX_40.align"
     try:
@@ -62,29 +37,49 @@ def build_cloud_dictionary_v4(): # Renamed to FORCE Streamlit to build a new dic
             graphemes = list(word) 
             phonemes = tokens[1:]
             
-            # Apply our smart alignment if lengths match OR if 'x' adds an extra sound
-            if len(graphemes) == len(phonemes) or ('x' in word and len(phonemes) == len(graphemes) + 1):
-                raw_alignment = smart_align(graphemes, phonemes)
-                
-                # Clean up underscores
+            # Standard 1-to-1 match (Catches words like 'boxer')
+            if len(graphemes) == len(phonemes):
                 word_alignment = []
-                for g, p in raw_alignment:
+                for g, p in zip(graphemes, phonemes):
                     g_clean = g if g != '_' else ''
                     p_clean = p if p != '_' else ''
                     if g_clean or p_clean:
                         word_alignment.append([g_clean, p_clean])
-                        
                 if word not in temp_dict:
                     temp_dict[word] = word_alignment
-            
+ 
+            # --- IMPROVED X RESCUE MISSION ---
+            elif 'x' in word:
+                # Count how many 'x' characters exist
+                x_count = word.count('x')
+                # Each 'x' adds one extra phoneme (K+S or G+Z = 2 sounds for 1 letter)
+                if len(phonemes) == len(graphemes) + x_count:
+                    word_alignment = []
+                    p_idx = 0
+                    try:
+                        for g in graphemes:
+                            if g == 'x' and p_idx + 1 < len(phonemes):
+                                # Pack both sounds into the 'x' slot
+                                word_alignment.append([g, phonemes[p_idx] + " " + phonemes[p_idx+1]])
+                                p_idx += 2
+                            else:
+                                word_alignment.append([g, phonemes[p_idx]])
+                                p_idx += 1
+                        if word not in temp_dict and p_idx == len(phonemes):
+                            temp_dict[word] = word_alignment
+                    except IndexError:
+                        pass
+            # ---------------------------------
+
+        
         return temp_dict
     except Exception as e:
         st.error(f"Cloud build failed: {e}")
         return {}
 
-setup_nltk_v3()
+setup_nltk_v2()
 with st.spinner("Initializing linguistic engine..."):
-    aligned_dict = build_cloud_dictionary_v4()
+    aligned_dict = build_cloud_dictionary_v3()
 
 # --- 2. Friendly Phoneme Dictionaries ---
 VOWELS = {
