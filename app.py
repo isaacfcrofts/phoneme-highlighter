@@ -18,7 +18,7 @@ def setup_nltk_v2(): # Renamed to bust cache
     nltk.download('averaged_perceptron_tagger_eng')
 
 @st.cache_data
-def build_cloud_dictionary_v3(): # Renamed to FORCE Streamlit to build a new dictionary
+def build_cloud_dictionary_v4(): # Renamed to FORCE Streamlit to build a new dictionary
     """Downloads the CMU data and builds your 121k dictionary in the cloud memory"""
     url = "https://raw.githubusercontent.com/kastnerkyle/diphone_synthesizer/master/cmudict.0.7a_SPHINX_40.align"
     try:
@@ -79,7 +79,7 @@ def build_cloud_dictionary_v3(): # Renamed to FORCE Streamlit to build a new dic
 
 setup_nltk_v2()
 with st.spinner("Initializing linguistic engine..."):
-    aligned_dict = build_cloud_dictionary_v3()
+    aligned_dict = build_cloud_dictionary_v4()
 
 # --- 2. Friendly Phoneme Dictionaries ---
 VOWELS = {
@@ -232,3 +232,4 @@ st.write("next:", aligned_dict.get("next", "NOT IN DICTIONARY"))
 st.write("exactly:", aligned_dict.get("exactly", "NOT IN DICTIONARY"))
 st.write("expected:", aligned_dict.get("expected", "NOT IN DICTIONARY"))
 st.write("boxer:", aligned_dict.get("boxer", "NOT IN DICTIONARY"))
+
