@@ -11,15 +11,15 @@ import urllib.request
 
 # --- 1. Setup & Cloud Dictionary Builder ---
 @st.cache_resource
-def setup_nltk_v2(): # Renamed to bust cache
+def setup_nltk_v2(): 
     nltk.download('punkt')
     nltk.download('punkt_tab')
     nltk.download('averaged_perceptron_tagger')
     nltk.download('averaged_perceptron_tagger_eng')
 
 @st.cache_data
-def build_cloud_dictionary_v4(): # Renamed to FORCE Streamlit to build a new dictionary
-    """Downloads the CMU data and builds your 121k dictionary in the cloud memory"""
+def build_cloud_dictionary_v5(): # Renamed to v5 to FORCE Streamlit to build a new dictionary
+    """Downloads the CMU data and builds your dictionary in the cloud memory"""
     url = "https://raw.githubusercontent.com/kastnerkyle/diphone_synthesizer/master/cmudict.0.7a_SPHINX_40.align"
     try:
         response = urllib.request.urlopen(url)
@@ -91,31 +91,7 @@ def build_cloud_dictionary_v4(): # Renamed to FORCE Streamlit to build a new dic
 
             if word not in temp_dict:
                 temp_dict[word] = word_alignment
- 
-            # --- IMPROVED X RESCUE MISSION ---
-            elif 'x' in word:
-                # Count how many 'x' characters exist
-                x_count = word.count('x')
-                # Each 'x' adds one extra phoneme (K+S or G+Z = 2 sounds for 1 letter)
-                if len(phonemes) == len(graphemes) + x_count:
-                    word_alignment = []
-                    p_idx = 0
-                    try:
-                        for g in graphemes:
-                            if g == 'x' and p_idx + 1 < len(phonemes):
-                                # Pack both sounds into the 'x' slot
-                                word_alignment.append([g, phonemes[p_idx] + " " + phonemes[p_idx+1]])
-                                p_idx += 2
-                            else:
-                                word_alignment.append([g, phonemes[p_idx]])
-                                p_idx += 1
-                        if word not in temp_dict and p_idx == len(phonemes):
-                            temp_dict[word] = word_alignment
-                    except IndexError:
-                        pass
-            # ---------------------------------
-
-        
+                
         return temp_dict
     except Exception as e:
         st.error(f"Cloud build failed: {e}")
@@ -123,7 +99,7 @@ def build_cloud_dictionary_v4(): # Renamed to FORCE Streamlit to build a new dic
 
 setup_nltk_v2()
 with st.spinner("Initializing linguistic engine..."):
-    aligned_dict = build_cloud_dictionary_v4()
+    aligned_dict = build_cloud_dictionary_v5()
 
 # --- 2. Friendly Phoneme Dictionaries ---
 VOWELS = {
@@ -226,7 +202,6 @@ if st.button("Highlight Phonemes"):
             
             # 1. Base Matches
             for i, (g, p) in enumerate(alignment):
-                # We use .split() so if 'x' holds two sounds ("K S" or "G Z"), it checks both!
                 if target_phoneme in re.sub(r'\d+', '', p).split():
                     highlights[i] = True
                     
@@ -276,4 +251,3 @@ st.write("next:", aligned_dict.get("next", "NOT IN DICTIONARY"))
 st.write("exactly:", aligned_dict.get("exactly", "NOT IN DICTIONARY"))
 st.write("expected:", aligned_dict.get("expected", "NOT IN DICTIONARY"))
 st.write("boxer:", aligned_dict.get("boxer", "NOT IN DICTIONARY"))
-
