@@ -28,25 +28,69 @@ def build_cloud_dictionary_v4(): # Renamed to FORCE Streamlit to build a new dic
         temp_dict = {}
         for line in lines:
             line = line.strip()
-            if not line or line.startswith(';'): continue
-            tokens = line.split()
-            if len(tokens) < 2: continue
-            raw_word = tokens[0].lower()
-            if not raw_word[0].isalpha(): continue
-            word = raw_word.split('(')[0]
-            graphemes = list(word) 
-            phonemes = tokens[1:]
+            if not line or line.startswith(';'):
+                continue
             
-            # Standard 1-to-1 match (Catches words like 'boxer')
-            if len(graphemes) == len(phonemes):
-                word_alignment = []
-                for g, p in zip(graphemes, phonemes):
-                    g_clean = g if g != '_' else ''
-                    p_clean = p if p != '_' else ''
-                    if g_clean or p_clean:
-                        word_alignment.append([g_clean, p_clean])
-                if word not in temp_dict:
-                    temp_dict[word] = word_alignment
+            tokens = line.split()
+            if len(tokens) < 2:
+                continue
+                
+            raw_word = tokens[0].lower()
+            if not raw_word[0].isalpha():
+                continue
+                
+            word = raw_word.split('(')[0]
+            phonemes = tokens[1:] 
+
+            # --- DYNAMIC ALIGNMENT ENGINE ---
+            word_alignment = []
+            g_idx = 0
+            p_idx = 0
+            
+            while g_idx < len(word) or p_idx < len(phonemes):
+                g = word[g_idx] if g_idx < len(word) else ""
+                
+                # 1. Handle 'x' (1 letter -> 2 sounds: K S or G Z)
+                if g == 'x' and p_idx + 1 < len(phonemes) and phonemes[p_idx].startswith(('K', 'G')):
+                    word_alignment.append([g, phonemes[p_idx] + " " + phonemes[p_idx+1]])
+                    g_idx += 1
+                    p_idx += 2
+                    continue
+                    
+                # 2. Handle 'u' making "Y UW" (e.g., music, use)
+                if g == 'u' and p_idx + 1 < len(phonemes) and phonemes[p_idx] == 'Y' and 'UW' in phonemes[p_idx+1]:
+                    word_alignment.append([g, phonemes[p_idx] + " " + phonemes[p_idx+1]])
+                    g_idx += 1
+                    p_idx += 2
+                    continue
+                    
+                # 3. Handle 'o' making "W AH" (e.g., once, one)
+                if g == 'o' and p_idx + 1 < len(phonemes) and phonemes[p_idx] == 'W' and 'AH' in phonemes[p_idx+1]:
+                    word_alignment.append([g, phonemes[p_idx] + " " + phonemes[p_idx+1]])
+                    g_idx += 1
+                    p_idx += 2
+                    continue
+
+                # 4. Standard 1-to-1 match
+                if g_idx < len(word) and p_idx < len(phonemes):
+                    word_alignment.append([g, phonemes[p_idx]])
+                    g_idx += 1
+                    p_idx += 1
+                    
+                # 5. Out of sounds, but still have letters (e.g., silent 'e' at the end)
+                elif g_idx < len(word):
+                    word_alignment.append([g, ""])
+                    g_idx += 1
+                    
+                # 6. Out of letters, but still have sounds (Pack extras into the last letter)
+                elif p_idx < len(phonemes) and len(word_alignment) > 0:
+                    word_alignment[-1][1] += " " + phonemes[p_idx]
+                    p_idx += 1
+                else:
+                    break
+
+            if word not in temp_dict:
+                temp_dict[word] = word_alignment
  
             # --- IMPROVED X RESCUE MISSION ---
             elif 'x' in word:
