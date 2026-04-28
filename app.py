@@ -9,97 +9,119 @@ import nltk
 import re
 import urllib.request
 
-# --- 1. Setup & Cloud Dictionary Builder ---
+# --- 1. Setup & Hybrid Dictionary Builder ---
 @st.cache_resource
-def setup_nltk_v2(): 
+def setup_nltk_v3(): # Cache busted
     nltk.download('punkt')
     nltk.download('punkt_tab')
     nltk.download('averaged_perceptron_tagger')
     nltk.download('averaged_perceptron_tagger_eng')
+    nltk.download('cmudict') # Added the raw dictionary fallback
 
 @st.cache_data
-def build_cloud_dictionary_v5(): # Renamed to v5 to FORCE Streamlit to build a new dictionary
-    """Downloads the CMU data and builds your dictionary in the cloud memory"""
+def build_cloud_dictionary_v6(): # Renamed to v6 to force fresh build
+    temp_dict = {}
+    
+    # PHASE 1: Load the pristine .align file for perfect 1-to-1 matches
     url = "https://raw.githubusercontent.com/kastnerkyle/diphone_synthesizer/master/cmudict.0.7a_SPHINX_40.align"
     try:
         response = urllib.request.urlopen(url)
         lines = response.read().decode('utf-8').splitlines()
         
-        temp_dict = {}
         for line in lines:
             line = line.strip()
-            if not line or line.startswith(';'):
-                continue
+            if not line or line.startswith(';'): continue
             
             tokens = line.split()
-            if len(tokens) < 2:
-                continue
+            if len(tokens) < 2: continue
                 
             raw_word = tokens[0].lower()
-            if not raw_word[0].isalpha():
-                continue
+            if not raw_word[0].isalpha(): continue
                 
             word = raw_word.split('(')[0]
             phonemes = tokens[1:] 
 
-            # --- DYNAMIC ALIGNMENT ENGINE ---
-            word_alignment = []
-            g_idx = 0
-            p_idx = 0
-            
-            while g_idx < len(word) or p_idx < len(phonemes):
-                g = word[g_idx] if g_idx < len(word) else ""
+            # The .align file uses underscores to perfectly space out sounds.
+            if len(word) == len(phonemes):
+                alignment = []
+                for g, p in zip(word, phonemes):
+                    p_clean = p if p != '_' else ''
+                    alignment.append([g, p_clean])
+                if word not in temp_dict:
+                    temp_dict[word] = alignment
+    except Exception as e:
+        st.warning(f"Cloud align file failed: {e}")
+
+    # PHASE 2: Fallback to NLTK raw CMU dict for dropped complex words (next, exactly, etc.)
+    try:
+        from nltk.corpus import cmudict
+        raw_cmu = cmudict.dict()
+        
+        for word, pronunciations in raw_cmu.items():
+            if word not in temp_dict and word.isalpha():
+                phonemes = pronunciations[0] # Take primary pronunciation
                 
-                # 1. Handle 'x' (1 letter -> 2 sounds: K S or G Z)
-                if g == 'x' and p_idx + 1 < len(phonemes) and phonemes[p_idx].startswith(('K', 'G')):
-                    word_alignment.append([g, phonemes[p_idx] + " " + phonemes[p_idx+1]])
-                    g_idx += 1
-                    p_idx += 2
-                    continue
+                # --- DYNAMIC ALIGNMENT ENGINE ---
+                word_alignment = []
+                g_idx = 0
+                p_idx = 0
+                
+                while g_idx < len(word) or p_idx < len(phonemes):
+                    g = word[g_idx] if g_idx < len(word) else ""
                     
-                # 2. Handle 'u' making "Y UW" (e.g., music, use)
-                if g == 'u' and p_idx + 1 < len(phonemes) and phonemes[p_idx] == 'Y' and 'UW' in phonemes[p_idx+1]:
-                    word_alignment.append([g, phonemes[p_idx] + " " + phonemes[p_idx+1]])
-                    g_idx += 1
-                    p_idx += 2
-                    continue
-                    
-                # 3. Handle 'o' making "W AH" (e.g., once, one)
-                if g == 'o' and p_idx + 1 < len(phonemes) and phonemes[p_idx] == 'W' and 'AH' in phonemes[p_idx+1]:
-                    word_alignment.append([g, phonemes[p_idx] + " " + phonemes[p_idx+1]])
-                    g_idx += 1
-                    p_idx += 2
-                    continue
+                    # Strip numbers from phonemes for accurate logical matching
+                    p_current = ''.join([c for c in phonemes[p_idx] if not c.isdigit()]) if p_idx < len(phonemes) else ""
+                    p_next = ''.join([c for c in phonemes[p_idx+1] if not c.isdigit()]) if p_idx + 1 < len(phonemes) else ""
 
-                # 4. Standard 1-to-1 match
-                if g_idx < len(word) and p_idx < len(phonemes):
-                    word_alignment.append([g, phonemes[p_idx]])
-                    g_idx += 1
-                    p_idx += 1
-                    
-                # 5. Out of sounds, but still have letters (e.g., silent 'e' at the end)
-                elif g_idx < len(word):
-                    word_alignment.append([g, ""])
-                    g_idx += 1
-                    
-                # 6. Out of letters, but still have sounds (Pack extras into the last letter)
-                elif p_idx < len(phonemes) and len(word_alignment) > 0:
-                    word_alignment[-1][1] += " " + phonemes[p_idx]
-                    p_idx += 1
-                else:
-                    break
+                    # 1. Handle 'x' (1 letter -> 2 sounds: K S or G Z)
+                    if g == 'x' and p_next and p_current in ['K', 'G']:
+                        word_alignment.append([g, phonemes[p_idx] + " " + phonemes[p_idx+1]])
+                        g_idx += 1
+                        p_idx += 2
+                        continue
+                        
+                    # 2. Handle 'u' making "Y UW" (e.g., music, use)
+                    if g == 'u' and p_next and p_current == 'Y' and 'UW' in p_next:
+                        word_alignment.append([g, phonemes[p_idx] + " " + phonemes[p_idx+1]])
+                        g_idx += 1
+                        p_idx += 2
+                        continue
+                        
+                    # 3. Handle 'o' making "W AH" (e.g., once, one)
+                    if g == 'o' and p_next and p_current == 'W' and 'AH' in p_next:
+                        word_alignment.append([g, phonemes[p_idx] + " " + phonemes[p_idx+1]])
+                        g_idx += 1
+                        p_idx += 2
+                        continue
 
-            if word not in temp_dict:
+                    # 4. Standard 1-to-1 match
+                    if g_idx < len(word) and p_idx < len(phonemes):
+                        word_alignment.append([g, phonemes[p_idx]])
+                        g_idx += 1
+                        p_idx += 1
+                        
+                    # 5. Out of sounds, but still have letters (e.g., silent 'e' at the end)
+                    elif g_idx < len(word):
+                        word_alignment.append([g, ""])
+                        g_idx += 1
+                        
+                    # 6. Out of letters, but still have sounds (Pack extras into the last letter)
+                    elif p_idx < len(phonemes) and len(word_alignment) > 0:
+                        word_alignment[-1][1] += " " + phonemes[p_idx]
+                        p_idx += 1
+                    else:
+                        break
+
                 temp_dict[word] = word_alignment
                 
-        return temp_dict
     except Exception as e:
-        st.error(f"Cloud build failed: {e}")
-        return {}
+        st.warning(f"NLTK Fallback failed: {e}")
 
-setup_nltk_v2()
+    return temp_dict
+
+setup_nltk_v3()
 with st.spinner("Initializing linguistic engine..."):
-    aligned_dict = build_cloud_dictionary_v5()
+    aligned_dict = build_cloud_dictionary_v6()
 
 # --- 2. Friendly Phoneme Dictionaries ---
 VOWELS = {
@@ -204,15 +226,6 @@ if st.button("Highlight Phonemes"):
             for i, (g, p) in enumerate(alignment):
                 if target_phoneme in re.sub(r'\d+', '', p).split():
                     highlights[i] = True
-                    
-            # --- THE SPILLOVER FIX ---
-            for i in range(len(alignment)):
-                if alignment[i][0] == 'x':
-                    if target_phoneme in ['K', 'S', 'G', 'Z']:
-                        if i + 1 < len(alignment) and target_phoneme in re.sub(r'\d+', '', alignment[i+1][1]).split():
-                            highlights[i] = True     
-                            highlights[i+1] = False  
-            # ----------------------------------
             
             # 2. Your Ultimate Multi-Letter Catcher Logic
             tetraph_rules = {"tion": ["SH","AH","N"], "sion": ["SH","ZH","AH","N"], "eigh": ["EY"], "augh": ["AO","F"], "ough": ["OW","AW","UW","AO","F","AH"]}
