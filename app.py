@@ -157,77 +157,102 @@ if st.button("Highlight Phonemes"):
     words = nltk.word_tokenize(text_input)
     tagged_words = nltk.pos_tag(words)
     highlighted_output = []
+    
+    last_phoneme = None # Tracks the final sound of the previous word
+    
+    # NLTK splits these specific contractions out, so we provide manual alignments
+    contraction_rules = {
+        "n't": [['n', 'N'], ['\'', ''], ['t', 'T']],
+        "'re": [['\'', ''], ['r', 'R'], ['e', '']],
+        "'ve": [['\'', ''], ['v', 'V'], ['e', '']],
+        "'ll": [['\'', ''], ['l', 'L'], ['l', '']],
+        "'m": [['\'', ''], ['m', 'M']],
+        "'d": [['\'', ''], ['d', 'D']]
+    }
 
     for word, pos_tag in tagged_words:
-        if not word.isalnum():
+        lower_word = word.lower()
+        alignment = None
+        
+        # 1. Intercept punctuation-heavy suffixes before the isalnum() check
+        if lower_word == "'s":
+            # Context-aware pronunciation for "'s"
+            s_sound = 'S' if last_phoneme in ['P', 'T', 'K', 'F', 'TH'] else 'Z'
+            alignment = [['\'', ''], ['s', s_sound]]
+        elif lower_word in contraction_rules:
+            alignment = list(contraction_rules[lower_word])
+            
+        # 2. Skip other pure punctuation
+        if not word.isalnum() and not alignment:
             highlighted_output.append(word)
             continue
             
-        lower_word = word.lower()
-        if lower_word in aligned_dict:
-            alignment = list(aligned_dict[lower_word])
-            
-            # --- Comprehensive Heteronym Grammar Override ---
-            if lower_word == "read":
-                if pos_tag in ["VBD", "VBN"]:
-                    alignment = [['r', 'R'], ['e', 'EH'], ['a', ''], ['d', 'D']]
-                else:
-                    alignment = [['r', 'R'], ['e', 'IY'], ['a', ''], ['d', 'D']]
-            elif lower_word == "record":
-                if pos_tag.startswith("VB"):
-                    alignment = [['r', 'R'], ['e', 'IH'], ['c', 'K'], ['o', 'AO'], ['r', 'R'], ['d', 'D']]
-                else:
-                    alignment = [['r', 'R'], ['e', 'EH'], ['c', 'K'], ['o', 'ER'], ['r', 'R'], ['d', 'D']]
-            elif lower_word == "object":
-                if pos_tag.startswith("VB"):
-                    alignment = [['o', 'AH'], ['b', 'B'], ['j', 'JH'], ['e', 'EH'], ['c', 'K'], ['t', 'T']]
-                else:
-                    alignment = [['o', 'AA'], ['b', 'B'], ['j', 'JH'], ['e', 'EH'], ['c', 'K'], ['t', 'T']]
-            elif lower_word == "tear":
-                if pos_tag.startswith("VB"):
-                    alignment = [['t', 'T'], ['e', 'EH'], ['a', ''], ['r', 'R']]
-                else:
-                    alignment = [['t', 'T'], ['e', 'IY'], ['a', ''], ['r', 'R']]
-            elif lower_word == "live":
-                if pos_tag.startswith("VB"):
-                    alignment = [['l', 'L'], ['i', 'IH'], ['v', 'V'], ['e', '']]
-                else:
-                    alignment = [['l', 'L'], ['i', 'AY'], ['v', 'V'], ['e', '']]
-            elif lower_word == "lead":
-                if pos_tag.startswith("NN"):
-                    alignment = [['l', 'L'], ['e', 'EH'], ['a', ''], ['d', 'D']]
-                else:
-                    alignment = [['l', 'L'], ['e', 'IY'], ['a', ''], ['d', 'D']]
-            elif lower_word == "present":
-                if pos_tag.startswith("VB"):
-                    alignment = [['p', 'P'], ['r', 'R'], ['e', 'IY'], ['s', 'Z'], ['e', 'EH'], ['n', 'N'], ['t', 'T']]
-                else:
-                    alignment = [['p', 'P'], ['r', 'R'], ['e', 'EH'], ['s', 'Z'], ['e', 'AH'], ['n', 'N'], ['t', 'T']]
-            elif lower_word == "project":
-                if pos_tag.startswith("VB"):
-                    alignment = [['p', 'P'], ['r', 'R'], ['o', 'AH'], ['j', 'JH'], ['e', 'EH'], ['c', 'K'], ['t', 'T']]
-                else:
-                    alignment = [['p', 'P'], ['r', 'R'], ['o', 'AA'], ['j', 'JH'], ['e', 'EH'], ['c', 'K'], ['t', 'T']]
-            elif lower_word == "wind":
-                if pos_tag.startswith("VB"):
-                    alignment = [['w', 'W'], ['i', 'AY'], ['n', 'N'], ['d', 'D']]
-                else:
-                    alignment = [['w', 'W'], ['i', 'IH'], ['n', 'N'], ['d', 'D']]
-            elif lower_word == "minute":
-                if pos_tag.startswith("JJ"):
-                    alignment = [['m', 'M'], ['i', 'AY'], ['n', 'N'], ['u', 'UW'], ['t', 'T'], ['e', '']]
-                else:
-                    alignment = [['m', 'M'], ['i', 'IH'], ['n', 'N'], ['u', 'AH'], ['t', 'T'], ['e', '']]
-            # ---------------------------------------------
+        # 3. Process dictionary words and intercepted contractions
+        if alignment or lower_word in aligned_dict:
+            if not alignment:
+                alignment = list(aligned_dict[lower_word])
+                
+                # --- Comprehensive Heteronym Grammar Override ---
+                if lower_word == "read":
+                    if pos_tag in ["VBD", "VBN"]:
+                        alignment = [['r', 'R'], ['e', 'EH'], ['a', ''], ['d', 'D']]
+                    else:
+                        alignment = [['r', 'R'], ['e', 'IY'], ['a', ''], ['d', 'D']]
+                elif lower_word == "record":
+                    if pos_tag.startswith("VB"):
+                        alignment = [['r', 'R'], ['e', 'IH'], ['c', 'K'], ['o', 'AO'], ['r', 'R'], ['d', 'D']]
+                    else:
+                        alignment = [['r', 'R'], ['e', 'EH'], ['c', 'K'], ['o', 'ER'], ['r', 'R'], ['d', 'D']]
+                elif lower_word == "object":
+                    if pos_tag.startswith("VB"):
+                        alignment = [['o', 'AH'], ['b', 'B'], ['j', 'JH'], ['e', 'EH'], ['c', 'K'], ['t', 'T']]
+                    else:
+                        alignment = [['o', 'AA'], ['b', 'B'], ['j', 'JH'], ['e', 'EH'], ['c', 'K'], ['t', 'T']]
+                elif lower_word == "tear":
+                    if pos_tag.startswith("VB"):
+                        alignment = [['t', 'T'], ['e', 'EH'], ['a', ''], ['r', 'R']]
+                    else:
+                        alignment = [['t', 'T'], ['e', 'IY'], ['a', ''], ['r', 'R']]
+                elif lower_word == "live":
+                    if pos_tag.startswith("VB"):
+                        alignment = [['l', 'L'], ['i', 'IH'], ['v', 'V'], ['e', '']]
+                    else:
+                        alignment = [['l', 'L'], ['i', 'AY'], ['v', 'V'], ['e', '']]
+                elif lower_word == "lead":
+                    if pos_tag.startswith("NN"):
+                        alignment = [['l', 'L'], ['e', 'EH'], ['a', ''], ['d', 'D']]
+                    else:
+                        alignment = [['l', 'L'], ['e', 'IY'], ['a', ''], ['d', 'D']]
+                elif lower_word == "present":
+                    if pos_tag.startswith("VB"):
+                        alignment = [['p', 'P'], ['r', 'R'], ['e', 'IY'], ['s', 'Z'], ['e', 'EH'], ['n', 'N'], ['t', 'T']]
+                    else:
+                        alignment = [['p', 'P'], ['r', 'R'], ['e', 'EH'], ['s', 'Z'], ['e', 'AH'], ['n', 'N'], ['t', 'T']]
+                elif lower_word == "project":
+                    if pos_tag.startswith("VB"):
+                        alignment = [['p', 'P'], ['r', 'R'], ['o', 'AH'], ['j', 'JH'], ['e', 'EH'], ['c', 'K'], ['t', 'T']]
+                    else:
+                        alignment = [['p', 'P'], ['r', 'R'], ['o', 'AA'], ['j', 'JH'], ['e', 'EH'], ['c', 'K'], ['t', 'T']]
+                elif lower_word == "wind":
+                    if pos_tag.startswith("VB"):
+                        alignment = [['w', 'W'], ['i', 'AY'], ['n', 'N'], ['d', 'D']]
+                    else:
+                        alignment = [['w', 'W'], ['i', 'IH'], ['n', 'N'], ['d', 'D']]
+                elif lower_word == "minute":
+                    if pos_tag.startswith("JJ"):
+                        alignment = [['m', 'M'], ['i', 'AY'], ['n', 'N'], ['u', 'UW'], ['t', 'T'], ['e', '']]
+                    else:
+                        alignment = [['m', 'M'], ['i', 'IH'], ['n', 'N'], ['u', 'AH'], ['t', 'T'], ['e', '']]
+                # ---------------------------------------------
             
             highlights = [False] * len(alignment)
             
-            # 1. Base Matches
+            # 4. Base Matches
             for i, (g, p) in enumerate(alignment):
                 if target_phoneme in re.sub(r'\d+', '', p).split():
                     highlights[i] = True
             
-            # 2. Your Ultimate Multi-Letter Catcher Logic
+            # 5. Multi-Letter Catcher Logic
             tetraph_rules = {"tion": ["SH","AH","N"], "sion": ["SH","ZH","AH","N"], "eigh": ["EY"], "augh": ["AO","F"], "ough": ["OW","AW","UW","AO","F","AH"]}
             trigraph_rules = {"igh": ["AY"], "tch": ["CH"], "dge": ["JH"], "eau": ["OW","UW"], "ous": ["AH","S"], "que": ["K"]}
             pair_rules = {"sh":["SH"],"ch":["CH","K","SH"],"th":["TH","DH"],"ph":["F"],"wh":["W","HH"],"ng":["NG"],"gh":["F","G"],"ck":["K"],"kn":["N"],"wr":["R"],"mb":["M"],"gn":["N"],"rh":["R"],"ti":["SH"],"ci":["SH"],"si":["SH","ZH"],"ce":["SH"],"tu":["CH"],"su":["SH","ZH"],"ea":["IY","EH","EY"],"ee":["IY"],"oa":["OW"],"oo":["UW","UH"],"ou":["AW","AH","UW","OW"],"ow":["AW","OW"],"ai":["EY","EH"],"ay":["EY"],"ei":["EY","IY"],"ey":["EY","IY"],"au":["AO"],"aw":["AO"],"ew":["UW","Y"],"oe":["OW","UW"],"ie":["IY","AY"],"ui":["UW","IH"],"ue":["UW"]}
@@ -248,13 +273,19 @@ if st.button("Highlight Phonemes"):
                 if (pair in pair_rules and target_phoneme in pair_rules[pair]) or is_double:
                     if any(highlights[i:i+2]): highlights[i:i+2] = [True, True]
 
-            # 3. Final Render
+            # 6. Final Render & State Update
             word_html = "".join([f"<span style='background-color: #FFFF00; font-weight: bold; color: black; padding: 0 2px; border-radius: 3px;'>{g}</span>" if highlights[i] else g for i, (g, p) in enumerate(alignment)])
             highlighted_output.append(word_html)
+            
+            # Capture the final valid phoneme to provide context for the next word (e.g., determining if 's is an S or Z)
+            for g, p in reversed(alignment):
+                clean_p = re.sub(r'\d+', '', p).strip()
+                if clean_p:
+                    last_phoneme = clean_p.split()[-1]
+                    break
         else:
             highlighted_output.append(word)
 
     final_html = re.sub(r' ([.,!?\'])', r'\1', " ".join(highlighted_output))
     st.markdown("### Result:")
-
     st.markdown(f"<div style='font-size: 24px; line-height: 1.5;'>{final_html}</div>", unsafe_allow_html=True)
