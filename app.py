@@ -212,6 +212,7 @@ HETERONYM_RULES = {
         "VB": [['b', 'B'], ['o', 'AW'], ['w', '']], 
         "DEFAULT": [['b', 'B'], ['o', 'OW'], ['w', '']]
     }
+}
 
 # --- 3. User Interface ---
 st.title("English Phoneme Highlighter")
