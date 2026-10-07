@@ -19,7 +19,7 @@ def setup_nltk_v3(): # Cache busted
     nltk.download('cmudict') # Added the raw dictionary fallback
 
 @st.cache_data
-def build_cloud_dictionary_v6(): # Renamed to v6 to force fresh build
+def build_cloud_dictionary_v7(): # Renamed to v7 to force fresh build
     temp_dict = {}
     
     # PHASE 1: Load the pristine .align file for perfect 1-to-1 matches
@@ -43,6 +43,15 @@ def build_cloud_dictionary_v6(): # Renamed to v6 to force fresh build
 
             # The .align file uses underscores to perfectly space out sounds.
             if len(word) == len(phonemes):
+                # --- NEW: Edge Case Interceptor ---
+                # Skip words where a single letter makes two sounds (o->W+AH, u->Y+UW, x->K+S)
+                # so that they safely fall through to your Phase 2 dynamic engine instead.
+                if ('o' in word and 'W' in phonemes and 'AH' in phonemes) or \
+                   ('u' in word and 'Y' in phonemes and 'UW' in phonemes) or \
+                   ('x' in word and (('K' in phonemes and 'S' in phonemes) or ('G' in phonemes and 'Z' in phonemes))):
+                    continue
+                # ----------------------------------
+                
                 alignment = []
                 for g, p in zip(word, phonemes):
                     p_clean = p if p != '_' else ''
@@ -52,7 +61,7 @@ def build_cloud_dictionary_v6(): # Renamed to v6 to force fresh build
     except Exception as e:
         st.warning(f"Cloud align file failed: {e}")
 
-    # PHASE 2: Fallback to NLTK raw CMU dict for dropped complex words (next, exactly, etc.)
+    # PHASE 2: Fallback to NLTK raw CMU dict for dropped complex words
     try:
         from nltk.corpus import cmudict
         raw_cmu = cmudict.dict()
@@ -121,7 +130,7 @@ def build_cloud_dictionary_v6(): # Renamed to v6 to force fresh build
 
 setup_nltk_v3()
 with st.spinner("Initializing linguistic engine..."):
-    aligned_dict = build_cloud_dictionary_v6()
+    aligned_dict = build_cloud_dictionary_v7()
 
 # --- 2. Friendly Phoneme Dictionaries ---
 VOWELS = {
