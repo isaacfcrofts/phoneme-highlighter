@@ -4,133 +4,25 @@ Created on Thu Feb 26 15:06:42 2026
 
 @author: Endor
 """
+# --- 1. Setup & ML Model ---
 import streamlit as st
 import nltk
 import re
-import urllib.request
+from g2p_en import G2p
 
-# --- 1. Setup & Hybrid Dictionary Builder ---
 @st.cache_resource
-def setup_nltk_v3(): # Cache busted
+def setup_nltk(): 
     nltk.download('punkt')
     nltk.download('punkt_tab')
-    nltk.download('averaged_perceptron_tagger')
-    nltk.download('averaged_perceptron_tagger_eng')
-    nltk.download('cmudict') # Added the raw dictionary fallback
 
-@st.cache_data
-def build_cloud_dictionary_v7(): # Renamed to v7 to force fresh build
-    temp_dict = {}
-    
-    # PHASE 1: Load the pristine .align file for perfect 1-to-1 matches
-    url = "https://raw.githubusercontent.com/kastnerkyle/diphone_synthesizer/master/cmudict.0.7a_SPHINX_40.align"
-    try:
-        response = urllib.request.urlopen(url)
-        lines = response.read().decode('utf-8').splitlines()
-        
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith(';'): continue
-            
-            tokens = line.split()
-            if len(tokens) < 2: continue
-                
-            raw_word = tokens[0].lower()
-            if not raw_word[0].isalpha(): continue
-                
-            word = raw_word.split('(')[0]
-            phonemes = tokens[1:] 
+@st.cache_resource
+def load_linguistic_model():
+    # Cache the neural network so Streamlit doesn't reload it on every button click
+    return G2p()
 
-            # The .align file uses underscores to perfectly space out sounds.
-            if len(word) == len(phonemes):
-                # --- NEW: Edge Case Interceptor ---
-                # Skip words where a single letter makes two sounds (o->W+AH, u->Y+UW, x->K+S)
-                # so that they safely fall through to your Phase 2 dynamic engine instead.
-                if ('o' in word and 'W' in phonemes and 'AH' in phonemes) or \
-                   ('u' in word and 'Y' in phonemes and 'UW' in phonemes) or \
-                   ('x' in word and (('K' in phonemes and 'S' in phonemes) or ('G' in phonemes and 'Z' in phonemes))):
-                    continue
-                # ----------------------------------
-                
-                alignment = []
-                for g, p in zip(word, phonemes):
-                    p_clean = p if p != '_' else ''
-                    alignment.append([g, p_clean])
-                if word not in temp_dict:
-                    temp_dict[word] = alignment
-    except Exception as e:
-        st.warning(f"Cloud align file failed: {e}")
-
-    # PHASE 2: Fallback to NLTK raw CMU dict for dropped complex words
-    try:
-        from nltk.corpus import cmudict
-        raw_cmu = cmudict.dict()
-        
-        for word, pronunciations in raw_cmu.items():
-            if word not in temp_dict and word.isalpha():
-                phonemes = pronunciations[0] # Take primary pronunciation
-                
-                # --- DYNAMIC ALIGNMENT ENGINE ---
-                word_alignment = []
-                g_idx = 0
-                p_idx = 0
-                
-                while g_idx < len(word) or p_idx < len(phonemes):
-                    g = word[g_idx] if g_idx < len(word) else ""
-                    
-                    # Strip numbers from phonemes for accurate logical matching
-                    p_current = ''.join([c for c in phonemes[p_idx] if not c.isdigit()]) if p_idx < len(phonemes) else ""
-                    p_next = ''.join([c for c in phonemes[p_idx+1] if not c.isdigit()]) if p_idx + 1 < len(phonemes) else ""
-
-                    # 1. Handle 'x' (1 letter -> 2 sounds: K S or G Z)
-                    if g == 'x' and p_next and p_current in ['K', 'G']:
-                        word_alignment.append([g, phonemes[p_idx] + " " + phonemes[p_idx+1]])
-                        g_idx += 1
-                        p_idx += 2
-                        continue
-                        
-                    # 2. Handle 'u' making "Y UW" (e.g., music, use)
-                    if g == 'u' and p_next and p_current == 'Y' and 'UW' in p_next:
-                        word_alignment.append([g, phonemes[p_idx] + " " + phonemes[p_idx+1]])
-                        g_idx += 1
-                        p_idx += 2
-                        continue
-                        
-                    # 3. Handle 'o' making "W AH" (e.g., once, one)
-                    if g == 'o' and p_next and p_current == 'W' and 'AH' in p_next:
-                        word_alignment.append([g, phonemes[p_idx] + " " + phonemes[p_idx+1]])
-                        g_idx += 1
-                        p_idx += 2
-                        continue
-
-                    # 4. Standard 1-to-1 match
-                    if g_idx < len(word) and p_idx < len(phonemes):
-                        word_alignment.append([g, phonemes[p_idx]])
-                        g_idx += 1
-                        p_idx += 1
-                        
-                    # 5. Out of sounds, but still have letters (e.g., silent 'e' at the end)
-                    elif g_idx < len(word):
-                        word_alignment.append([g, ""])
-                        g_idx += 1
-                        
-                    # 6. Out of letters, but still have sounds (Pack extras into the last letter)
-                    elif p_idx < len(phonemes) and len(word_alignment) > 0:
-                        word_alignment[-1][1] += " " + phonemes[p_idx]
-                        p_idx += 1
-                    else:
-                        break
-
-                temp_dict[word] = word_alignment
-                
-    except Exception as e:
-        st.warning(f"NLTK Fallback failed: {e}")
-
-    return temp_dict
-
-setup_nltk_v3()
-with st.spinner("Initializing linguistic engine..."):
-    aligned_dict = build_cloud_dictionary_v7()
+setup_nltk()
+with st.spinner("Loading neural network..."):
+    g2p_model = load_linguistic_model()
 
 # --- 2. Linguistic Data & Dictionaries ---
 VOWELS = {
@@ -225,96 +117,102 @@ target_phoneme = selected_display_text.split(" -")[0]
 
 # --- 4. Text Processing Engine ---
 if st.button("Highlight Phonemes"):
-    words = nltk.word_tokenize(text_input)
-    tagged_words = nltk.pos_tag(words)
-    highlighted_output = []
+    # 1. Ask the neural net to predict phonemes for the entire text at once to retain context
+    predicted_output = g2p_model(text_input)
     
-    last_phoneme = None
+    # predicted_output is a flat list (e.g., ['T', 'UH1', 'K', ' ', 'AH0', ' ', 'B', 'AW1'])
+    # We parse this into a list of phoneme arrays for each word
+    g2p_word_phonemes = []
+    current_phonemes = []
     
-    contraction_rules = {
-        "n't": [['n', 'N'], ['\'', ''], ['t', 'T']],
-        "'re": [['\'', ''], ['r', 'R'], ['e', '']],
-        "'ve": [['\'', ''], ['v', 'V'], ['e', '']],
-        "'ll": [['\'', ''], ['l', 'L'], ['l', '']],
-        "'m": [['\'', ''], ['m', 'M']],
-        "'d": [['\'', ''], ['d', 'D']]
-    }
-
-    for word, pos_tag in tagged_words:
-        lower_word = word.lower()
-        alignment = None
+    for item in predicted_output:
+        if item == ' ':
+            if current_phonemes:
+                g2p_word_phonemes.append(current_phonemes)
+                current_phonemes = []
+        elif item.isalnum(): 
+            # It's a phoneme, so we strip the stress numbers (e.g., AW1 -> AW)
+            current_phonemes.append(re.sub(r'\d+', '', item)) 
+    if current_phonemes:
+        g2p_word_phonemes.append(current_phonemes)
         
-        # 1. Intercept punctuation-heavy suffixes before the isalnum() check
-        if lower_word == "'s":
-            s_sound = 'S' if last_phoneme in ['P', 'T', 'K', 'F', 'TH'] else 'Z'
-            alignment = [['\'', ''], ['s', s_sound]]
-        elif lower_word in contraction_rules:
-            alignment = list(contraction_rules[lower_word])
-            
-        # 2. Skip other pure punctuation
-        if not word.isalnum() and not alignment:
+    # 2. Tokenize the input to get the original words and sync them with the ML output
+    words = nltk.word_tokenize(text_input)
+    highlighted_output = []
+    word_idx = 0
+    
+    for word in words:
+        # Pass pure punctuation straight to the final output
+        if not word.isalnum() and word not in ["n't", "'re", "'ve", "'ll", "'m", "'d", "'s"]:
             highlighted_output.append(word)
             continue
             
-        # 3. Process dictionary words and intercepted contractions
-        if alignment or lower_word in aligned_dict:
-            if not alignment:
-                # --- NEW: Dictionary-Driven Heteronym Lookup ---
-                if lower_word in HETERONYM_RULES:
-                    rules = HETERONYM_RULES[lower_word]
-                    matched = False
-                    # Search for a matching POS prefix (e.g. 'VB' matches 'VBZ', 'VBD', etc.)
-                    for tag_key, align_array in rules.items():
-                        if tag_key != "DEFAULT" and pos_tag.startswith(tag_key):
-                            alignment = list(align_array)
-                            matched = True
-                            break
-                    # Fallback to the default pronunciation if the grammar tag wasn't explicitly caught
-                    if not matched and "DEFAULT" in rules:
-                        alignment = list(rules["DEFAULT"])
-                else:
-                    alignment = list(aligned_dict[lower_word])
-                # ---------------------------------------------
-            
-            highlights = [False] * len(alignment)
-            
-            # 4. Base Matches
-            for i, (g, p) in enumerate(alignment):
-                if target_phoneme in re.sub(r'\d+', '', p).split():
-                    highlights[i] = True
-            
-            # 5. Multi-Letter Catcher Logic
-            tetraph_rules = {"tion": ["SH","AH","N"], "sion": ["SH","ZH","AH","N"], "eigh": ["EY"], "augh": ["AO","F"], "ough": ["OW","AW","UW","AO","F","AH"]}
-            trigraph_rules = {"igh": ["AY"], "tch": ["CH"], "dge": ["JH"], "eau": ["OW","UW"], "ous": ["AH","S"], "que": ["K"]}
-            pair_rules = {"sh":["SH"],"ch":["CH","K","SH"],"th":["TH","DH"],"ph":["F"],"wh":["W","HH"],"ng":["NG"],"gh":["F","G"],"ck":["K"],"kn":["N"],"wr":["R"],"mb":["M"],"gn":["N"],"rh":["R"],"ti":["SH"],"ci":["SH"],"si":["SH","ZH"],"ce":["SH"],"tu":["CH"],"su":["SH","ZH"],"ea":["IY","EH","EY"],"ee":["IY"],"oa":["OW"],"oo":["UW","UH"],"ou":["AW","AH","UW","OW"],"ow":["AW","OW"],"ai":["EY","EH"],"ay":["EY"],"ei":["EY","IY"],"ey":["EY","IY"],"au":["AO"],"aw":["AO"],"ew":["UW","Y"],"oe":["OW","UW"],"ie":["IY","AY"],"ui":["UW","IH"],"ue":["UW"]}
+        lower_word = word.lower()
+        
+        # Grab the context-aware phonemes the ML model generated for this specific word
+        target_phonemes = g2p_word_phonemes[word_idx] if word_idx < len(g2p_word_phonemes) else []
+        word_idx += 1
+        
+        # 3. Your Dynamic Alignment Engine (repurposed to align ML output on the fly)
+        word_alignment = []
+        g_idx = 0
+        p_idx = 0
+        
+        while g_idx < len(lower_word) or p_idx < len(target_phonemes):
+            g = lower_word[g_idx] if g_idx < len(lower_word) else ""
+            p_current = target_phonemes[p_idx] if p_idx < len(target_phonemes) else ""
+            p_next = target_phonemes[p_idx+1] if p_idx + 1 < len(target_phonemes) else ""
 
-            for i in range(len(alignment) - 3):
-                quad = "".join([a[0] for a in alignment[i:i+4]])
-                if quad in tetraph_rules and target_phoneme in tetraph_rules[quad]:
-                    if any(highlights[i:i+4]): highlights[i:i+4] = [True, True, True, True]
+            if g == 'x' and p_next and p_current in ['K', 'G']:
+                word_alignment.append([g, target_phonemes[p_idx] + " " + target_phonemes[p_idx+1]])
+                g_idx += 1; p_idx += 2; continue
+            if g == 'u' and p_next and p_current == 'Y' and 'UW' in p_next:
+                word_alignment.append([g, target_phonemes[p_idx] + " " + target_phonemes[p_idx+1]])
+                g_idx += 1; p_idx += 2; continue
+            if g == 'o' and p_next and p_current == 'W' and 'AH' in p_next:
+                word_alignment.append([g, target_phonemes[p_idx] + " " + target_phonemes[p_idx+1]])
+                g_idx += 1; p_idx += 2; continue
 
-            for i in range(len(alignment) - 2):
-                triple = "".join([a[0] for a in alignment[i:i+3]])
-                if triple in trigraph_rules and target_phoneme in trigraph_rules[triple]:
-                    if any(highlights[i:i+3]): highlights[i:i+3] = [True, True, True]
-
-            for i in range(len(alignment) - 1):
-                pair = "".join([a[0] for a in alignment[i:i+2]])
-                is_double = (alignment[i][0] == alignment[i+1][0] and alignment[i][0].isalpha())
-                if (pair in pair_rules and target_phoneme in pair_rules[pair]) or is_double:
-                    if any(highlights[i:i+2]): highlights[i:i+2] = [True, True]
-
-            # 6. Final Render & State Update
-            word_html = "".join([f"<span style='background-color: #FFFF00; font-weight: bold; color: black; padding: 0 2px; border-radius: 3px;'>{g}</span>" if highlights[i] else g for i, (g, p) in enumerate(alignment)])
-            highlighted_output.append(word_html)
+            if g_idx < len(lower_word) and p_idx < len(target_phonemes):
+                word_alignment.append([g, target_phonemes[p_idx]])
+                g_idx += 1; p_idx += 1
+            elif g_idx < len(lower_word):
+                word_alignment.append([g, ""])
+                g_idx += 1
+            elif p_idx < len(target_phonemes) and len(word_alignment) > 0:
+                word_alignment[-1][1] += " " + target_phonemes[p_idx]
+                p_idx += 1
+            else:
+                break
+                
+        # 4. Apply Your Multi-Letter Highlight Rules
+        highlights = [False] * len(word_alignment)
+        
+        for i, (g, p) in enumerate(word_alignment):
+            if target_phoneme in p.split(): highlights[i] = True
             
-            for g, p in reversed(alignment):
-                clean_p = re.sub(r'\d+', '', p).strip()
-                if clean_p:
-                    last_phoneme = clean_p.split()[-1]
-                    break
-        else:
-            highlighted_output.append(word)
+        tetraph_rules = {"tion": ["SH","AH","N"], "sion": ["SH","ZH","AH","N"], "eigh": ["EY"], "augh": ["AO","F"], "ough": ["OW","AW","UW","AO","F","AH"]}
+        trigraph_rules = {"igh": ["AY"], "tch": ["CH"], "dge": ["JH"], "eau": ["OW","UW"], "ous": ["AH","S"], "que": ["K"]}
+        pair_rules = {"sh":["SH"],"ch":["CH","K","SH"],"th":["TH","DH"],"ph":["F"],"wh":["W","HH"],"ng":["NG"],"gh":["F","G"],"ck":["K"],"kn":["N"],"wr":["R"],"mb":["M"],"gn":["N"],"rh":["R"],"ti":["SH"],"ci":["SH"],"si":["SH","ZH"],"ce":["SH"],"tu":["CH"],"su":["SH","ZH"],"ea":["IY","EH","EY"],"ee":["IY"],"oa":["OW"],"oo":["UW","UH"],"ou":["AW","AH","UW","OW"],"ow":["AW","OW"],"ai":["EY","EH"],"ay":["EY"],"ei":["EY","IY"],"ey":["EY","IY"],"au":["AO"],"aw":["AO"],"ew":["UW","Y"],"oe":["OW","UW"],"ie":["IY","AY"],"ui":["UW","IH"],"ue":["UW"]}
+
+        for i in range(len(word_alignment) - 3):
+            quad = "".join([a[0] for a in word_alignment[i:i+4]])
+            if quad in tetraph_rules and target_phoneme in tetraph_rules[quad]:
+                if any(highlights[i:i+4]): highlights[i:i+4] = [True, True, True, True]
+
+        for i in range(len(word_alignment) - 2):
+            triple = "".join([a[0] for a in word_alignment[i:i+3]])
+            if triple in trigraph_rules and target_phoneme in trigraph_rules[triple]:
+                if any(highlights[i:i+3]): highlights[i:i+3] = [True, True, True]
+
+        for i in range(len(word_alignment) - 1):
+            pair = "".join([a[0] for a in word_alignment[i:i+2]])
+            is_double = (word_alignment[i][0] == word_alignment[i+1][0] and word_alignment[i][0].isalpha())
+            if (pair in pair_rules and target_phoneme in pair_rules[pair]) or is_double:
+                if any(highlights[i:i+2]): highlights[i:i+2] = [True, True]
+
+        word_html = "".join([f"<span style='background-color: #FFFF00; font-weight: bold; color: black; padding: 0 2px; border-radius: 3px;'>{g}</span>" if highlights[i] else g for i, (g, p) in enumerate(word_alignment)])
+        highlighted_output.append(word_html)
 
     final_html = re.sub(r' ([.,!?\'])', r'\1', " ".join(highlighted_output))
     st.markdown("### Result:")
