@@ -1,3 +1,2 @@
 streamlit
 nltk
-g2p_en
